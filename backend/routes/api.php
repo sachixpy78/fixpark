@@ -1,63 +1,80 @@
 <?php
 
-use App\Http\Controllers\Api\DataController;
-use Illuminate\Http\Request;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\TiketController;
+use App\Http\Controllers\ParkirController;
+use App\Http\Controllers\MemberController;
+use App\Http\Controllers\TransaksiController;
+use App\Http\Controllers\LaporanController;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\DB;
 
-// Default user route (jangan dihapus)a
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+// =========================
+// AUTHENTICATION
+// =========================
+Route::post('/login', [AuthController::class, 'login']);
+Route::post('/logout', [AuthController::class, 'logout']);
 
-// API CRUD Data
-Route::resource('/data', DataController::class);
+// Lupa Password (OTP via Gmail)
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
+Route::put('/reset-password', [AuthController::class, 'resetPassword']);
 
-// ====================== LOGIN ADMIN ======================
-Route::post('/login', function (Request $request) {
-    $email = $request->input('email');
-    $password = $request->input('password');
+// Profil User & Daftar Akun
+Route::get('/profile/{id}', [AdminController::class, 'getProfile']);
+Route::post('/profile/{id}', [AdminController::class, 'updateProfile']);
+Route::post('/update-profile', [AdminController::class, 'updateProfile']);
+Route::get('/admin', [AdminController::class, 'allAccounts']);
 
-    $admin = DB::table('admin')
-        ->where('email', $email)
-        ->where('password', $password)
-        ->first();
+// =========================
+// KELOLA PETUGAS (Admin)
+// =========================
+Route::get('/petugas', [AdminController::class, 'index']);
+Route::post('/petugas', [AdminController::class, 'store']);
+Route::get('/petugas/{id}', [AdminController::class, 'show']);
+Route::put('/petugas/{id}', [AdminController::class, 'update']);
+Route::delete('/petugas/{id}', [AdminController::class, 'destroy']);
+Route::post('/petugas/{id}/unblock', [AdminController::class, 'unblock']);
 
-    if ($admin) {
-        return response()->json([
-            'success' => true,
-            'admin' => [
-                'id' => $admin->id,
-                'email' => $admin->email,
-                'username' => $admin->username,
-            ],
-        ]);
-    } else {
-        return response()->json([
-            'success' => false,
-            'message' => 'Email atau password salah!',
-        ]);
-    }
-});
+// =========================
+// ADMIN DASHBOARD & LAPORAN
+// =========================
+Route::get('/admin/dashboard', [AdminController::class, 'dashboard']);
+Route::get('/admin/laporan', [AdminController::class, 'laporanAdmin']);
+Route::get('/admin/laporan/pdf', [AdminController::class, 'exportLaporanAdminPdf']);
 
-// ====================== LUPA PASSWORD ======================
-Route::post('/forgot-password', function (Request $request) {
-    $email = $request->input('email');
-    $newPass = $request->input('new_password');
+// =========================
+// TIKET PARKIR (Publik - tanpa auth)
+// =========================
+Route::post('/member/check', [MemberController::class, 'check']);
+Route::post('/tiket/non-member', [TiketController::class, 'buatNonMember']);
+Route::post('/tiket/member', [TiketController::class, 'buatMember']);
+Route::get('/tiket/{barcode}', [TiketController::class, 'show']);
+Route::post('/tiket/{barcode}/plat', [TiketController::class, 'inputPlat']);
 
-    $admin = DB::table('admin')->where('email', $email)->first();
+// =========================
+// PARKIR KELUAR (Petugas)
+// =========================
+Route::post('/parkir/scan-keluar', [ParkirController::class, 'scanKeluar']);
+Route::post('/parkir/bayar', [ParkirController::class, 'bayar']);
+Route::get('/parkir/struk/{tiketId}', [ParkirController::class, 'struk']);
 
-    if (!$admin) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Email tidak ditemukan!',
-        ]);
-    }
+// =========================
+// KELOLA MEMBER (Petugas/Admin)
+// =========================
+Route::get('/member', [MemberController::class, 'index']);
+Route::post('/member', [MemberController::class, 'store']);
+Route::get('/member/{id}', [MemberController::class, 'show']);
+Route::put('/member/{id}', [MemberController::class, 'update']);
+Route::delete('/member/{id}', [MemberController::class, 'destroy']);
+Route::post('/member/{id}/kirim-ulang', [MemberController::class, 'kirimUlang']);
+Route::post('/member/{id}/perpanjang', [MemberController::class, 'perpanjang']);
 
-    DB::table('admin')->where('email', $email)->update(['password' => $newPass]);
+// =========================
+// TRANSAKSI & LAPORAN
+// =========================
+Route::get('/transaksi', [TransaksiController::class, 'index']);
+Route::get('/laporan/ringkasan', [TransaksiController::class, 'ringkasan']);
 
-    return response()->json([
-        'success' => true,
-        'message' => 'Password berhasil diubah!',
-    ]);
-});
+// TAMBAHKAN ROUTE INI:
+Route::get('/laporan/pdf', [LaporanController::class, 'cetakPdf']);

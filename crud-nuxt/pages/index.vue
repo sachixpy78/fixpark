@@ -1,174 +1,170 @@
+﻿<script setup>
+import { ref } from 'vue'
+
+const config = useRuntimeConfig()
+const router = useRouter()
+
+const loading = ref(null) // 'motor' | 'mobil' | null
+
+const ambilTiket = async (jenis) => {
+  try {
+    loading.value = jenis
+    const res = await $fetch('/tiket/non-member', {
+      baseURL: config.public.apiBase,
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      body: { jenis_kendaraan: jenis },
+    })
+    router.push(`/tiket/${res.tiket.barcode}`)
+  } catch (err) {
+    alert(err?.data?.message || 'Gagal membuat tiket, coba lagi')
+  } finally {
+    loading.value = null
+  }
+}
+</script>
+
 <template>
-  <div class="p-6 min-h-screen bg-gradient-to-br from-[#1a0000] via-[#2b0e0e] to-[#4b2b00]">
-    <div class="max-w-4xl mx-auto bg-[#1e0d0d]/95 rounded-xl shadow-2xl p-6 text-white border border-[#a67c00]/30">
-      <!-- Header dan tombol -->
-      <div class="flex flex-col md:flex-row justify-between items-center mb-6 gap-3">
-        <h1 class="text-3xl font-bold text-[#d4af37] drop-shadow-lg">Daftar Data</h1>
+  <div class="min-h-screen flex items-center justify-center p-6 relative overflow-hidden bg-parkir bg-cover bg-center">
+    <!-- Background Image -->
+    <div class="absolute inset-0 bg-parkir bg-cover bg-center bg-no-repeat"></div>
+    
+    <!-- Dark Overlay - lebih terang agar gambar mobil terlihat -->
+    <div class="absolute inset-0 bg-gradient-to-br from-slate-900/70 via-slate-900/50 to-slate-900/70"></div>
+    
+    <!-- Decorative blue accents -->
+    <div class="absolute top-0 left-0 w-1/2 h-full bg-gradient-to-br from-blue-600/10 to-transparent"></div>
+    <div class="absolute bottom-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
+    
+    <!-- Decorative Elements -->
+    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
+    <div class="absolute bottom-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
 
-        <div class="flex gap-3 items-center w-full md:w-auto">
-          <!-- Input Pencarian -->
-          <input
-            v-model="searchQuery"
-            type="text"
-            placeholder="Cari nama atau NIK..."
-            class="border border-[#a67c00]/40 bg-[#2b0e0e] text-white rounded-lg px-3 py-2 w-full md:w-64 focus:outline-none focus:ring-2 focus:ring-[#d4af37]"
-          />
-
-          <!-- Tombol Tambah -->
-          <NuxtLink
-            to="/create"
-            class="bg-gradient-to-r from-[#b22222] to-[#a67c00] hover:from-[#d43f3f] hover:to-[#e0b84a] text-white px-4 py-2 rounded-lg shadow-md transition-transform hover:scale-105"
-          >
-            + Tambah Data
-          </NuxtLink>
+    <!-- Main Container -->
+    <div class="relative z-10 w-full max-w-3xl">
+      <!-- Main Card -->
+      <div class="bg-slate-800/40 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/10 p-8 md:p-12">
+        
+        <!-- Header -->
+        <div class="text-center mb-10">
+          <div class="flex items-center justify-center gap-2 mb-3">
+            <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+            <span class="text-slate-300 text-xs font-semibold tracking-[0.2em] uppercase">Parkir Plaza Andalas</span>
+          </div>
+          <h1 class="text-3xl md:text-4xl font-black text-white tracking-tight mb-2">
+            AMBIL TIKET PARKIR
+          </h1>
+          <p class="text-slate-300 text-sm">Pilih jenis kendaraan Anda</p>
         </div>
+
+        <!-- Vehicle Selection -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          <!-- Motor -->
+          <button
+            @click="ambilTiket('motor')"
+            :disabled="loading !== null"
+            class="group relative flex flex-col items-center justify-center p-6 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+          >
+            <!-- Hover Effect Background -->
+            <div class="absolute inset-0 bg-gradient-to-br from-blue-500/0 to-blue-600/0 group-hover:from-blue-500/10 group-hover:to-blue-600/10 transition-all duration-300"></div>
+            
+            <!-- Vehicle Image -->
+            <div class="relative w-full h-40 mb-4 flex items-center justify-center">
+              <img 
+                src="/images/motor-vespa.png" 
+                alt="Motor" 
+                class="h-full object-contain drop-shadow-2xl group-hover:scale-110 group-hover:-translate-y-2 transition-transform duration-300"
+              />
+            </div>
+            
+            <!-- Info -->
+            <div class="relative text-center">
+              <h3 class="text-xl font-bold text-white mb-1">Motor</h3>
+              <p class="text-slate-300 text-sm font-medium">Rp 3.000/jam</p>
+            </div>
+
+            <!-- Loading Overlay -->
+            <div v-if="loading === 'motor'" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center rounded-2xl">
+              <div class="text-center">
+                <div class="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                <span class="text-blue-400 text-sm font-semibold">Memproses...</span>
+              </div>
+            </div>
+          </button>
+
+          <!-- Mobil -->
+          <button
+            @click="ambilTiket('mobil')"
+            :disabled="loading !== null"
+            class="group relative flex flex-col items-center justify-center p-6 bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl hover:bg-white/10 hover:border-white/20 hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
+          >
+            <!-- Hover Effect Background -->
+            <div class="absolute inset-0 bg-gradient-to-br from-emerald-500/0 to-emerald-600/0 group-hover:from-emerald-500/10 group-hover:to-emerald-600/10 transition-all duration-300"></div>
+            
+            <!-- Vehicle Image -->
+            <div class="relative w-full h-40 mb-4 flex items-center justify-center">
+              <img 
+                src="/images/mobil-porsche.png" 
+                alt="Mobil" 
+                class="h-full object-contain drop-shadow-2xl group-hover:scale-110 group-hover:-translate-y-2 transition-transform duration-300"
+              />
+            </div>
+            
+            <!-- Info -->
+            <div class="relative text-center">
+              <h3 class="text-xl font-bold text-white mb-1">Mobil</h3>
+              <p class="text-slate-300 text-sm font-medium">Rp 5.000/jam</p>
+            </div>
+
+            <!-- Loading Overlay -->
+            <div v-if="loading === 'mobil'" class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center rounded-2xl">
+              <div class="text-center">
+                <div class="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                <span class="text-emerald-400 text-sm font-semibold">Memproses...</span>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Divider -->
+        <div class="flex items-center gap-4 mb-6">
+          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+          <span class="text-slate-400 text-xs font-medium uppercase tracking-wider">atau</span>
+          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+        </div>
+
+        <!-- Member Card -->
+        <NuxtLink
+          to="/tiket/member"
+          class="group flex items-center justify-center gap-3 w-full py-4 bg-white/10 backdrop-blur-sm border border-white/20 hover:bg-white/15 hover:border-white/30 rounded-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
+        >
+          <svg class="w-5 h-5 text-slate-300 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+          </svg>
+          <span class="text-white font-semibold">Punya Kartu Member?</span>
+        </NuxtLink>
+        
+        <p class="text-center text-slate-400 text-xs mt-3">Scan kartu member untuk parkir gratis</p>
       </div>
 
-      <!-- Tabel Data -->
-      <table class="w-full border-collapse text-white">
-        <thead>
-          <tr class="bg-gradient-to-r from-[#4a0e0e] to-[#5a2a00] text-[#f8e4b7]">
-            <th class="border border-[#a67c00]/40 p-2">ID</th>
-            <th class="border border-[#a67c00]/40 p-2">NIK</th>
-            <th class="border border-[#a67c00]/40 p-2">Nama</th>
-            <th class="border border-[#a67c00]/40 p-2">Alamat</th>
-            <th class="border border-[#a67c00]/40 p-2">No. Telp</th>
-            <th class="border border-[#a67c00]/40 p-2">Aksi</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="(item, index) in paginatedData"
-            :key="item.id"
-            class="hover:bg-gradient-to-r hover:from-[#3d0b0b] hover:to-[#3f2600] transition"
-          >
-            <td class="border border-[#5e1a1a] p-2 text-center">{{ startIndex + index + 1 }}</td>
-            <td class="border border-[#5e1a1a] p-2">{{ item.nik }}</td>
-            <td class="border border-[#5e1a1a] p-2">{{ item.nama }}</td>
-            <td class="border border-[#5e1a1a] p-2">{{ item.alamat }}</td>
-            <td class="border border-[#5e1a1a] p-2">{{ item.no_telp }}</td>
-            <td class="border border-[#5e1a1a] p-2 text-center">
-              <NuxtLink
-                :to="`/${item.id}`"
-                class="text-[#ffd700] hover:text-[#fff4b3] font-semibold mr-2"
-              >
-                Edit
-              </NuxtLink>
-              <button
-                @click="hapusData(item.id)"
-                class="text-[#ff6666] hover:text-[#ff9999] font-semibold"
-              >
-                Hapus
-              </button>
-            </td>
-          </tr>
-
-          <!-- Jika tidak ada hasil -->
-          <tr v-if="paginatedData.length === 0">
-            <td colspan="6" class="text-center text-gray-400 py-4">
-              Tidak ada data ditemukan.
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- Paginasi -->
-      <div
-        v-if="totalPages > 1"
-        class="flex justify-center items-center gap-2 mt-6"
-      >
-        <button
-          @click="prevPage"
-          :disabled="currentPage === 1"
-          class="px-3 py-1 bg-[#5e1a1a] rounded-lg disabled:opacity-50 hover:bg-[#7a2222] transition"
+      <!-- Staff Login -->
+      <div class="mt-6 text-center">
+        <NuxtLink 
+          to="/login" 
+          class="inline-flex items-center gap-2 text-slate-300 hover:text-white text-sm transition-colors duration-300 group"
         >
-          ‹
-        </button>
-
-        <button
-          v-for="page in totalPages"
-          :key="page"
-          @click="currentPage = page"
-          :class="[ 
-            'px-3 py-1 rounded-lg transition font-semibold',
-            currentPage === page
-              ? 'bg-gradient-to-r from-[#b22222] to-[#a67c00] text-white shadow-md'
-              : 'bg-[#2b0e0e] hover:bg-[#4a1515]'
-          ]"
-        >
-          {{ page }}
-        </button>
-
-        <button
-          @click="nextPage"
-          :disabled="currentPage === totalPages"
-          class="px-3 py-1 bg-[#5e1a1a] rounded-lg disabled:opacity-50 hover:bg-[#7a2222] transition"
-        >
-          ›
-        </button>
+          <span>Login Petugas / Admin</span>
+          <svg class="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+          </svg>
+        </NuxtLink>
       </div>
     </div>
   </div>
 </template>
 
-<script setup>
-import axios from 'axios'
-import { ref, computed, onMounted } from 'vue'
-
-const dataList = ref([])
-const searchQuery = ref('')
-
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = 5
-
-// Ambil data dari API
-const getData = async () => {
-  const res = await axios.get('http://localhost:8000/api/data')
-  dataList.value = res.data
+<style scoped>
+.border-3 {
+  border-width: 3px;
 }
-
-// Fitur hapus data
-const hapusData = async (id) => {
-  if (confirm('Yakin ingin menghapus data ini?')) {
-    await axios.delete(`http://localhost:8000/api/data/${id}`)
-    alert('Data berhasil dihapus!')
-    getData()
-  }
-}
-
-// Filter data berdasarkan pencarian
-const filteredData = computed(() => {
-  if (!searchQuery.value) return dataList.value
-  return dataList.value.filter(item =>
-    item.nama.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-    item.nik.toLowerCase().includes(searchQuery.value.toLowerCase())
-  )
-})
-
-// Hitung total halaman
-const totalPages = computed(() =>
-  Math.ceil(filteredData.value.length / itemsPerPage)
-)
-
-// Ambil data sesuai halaman aktif
-const paginatedData = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage
-  const end = start + itemsPerPage
-  return filteredData.value.slice(start, end)
-})
-
-const startIndex = computed(() => (currentPage.value - 1) * itemsPerPage)
-
-// Navigasi halaman
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) currentPage.value++
-}
-const prevPage = () => {
-  if (currentPage.value > 1) currentPage.value--
-}
-
-onMounted(() => {
-  getData()
-})
-</script>
+</style>

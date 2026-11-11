@@ -1,0 +1,43 @@
+/* ===== TEMA E-PARKIR PLAZA ANDALAS (dark glass) ===== */
+html, body {
+  background: #1a2432;
+  color: #e9eef3;
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Latar gambar mobil */
+.bg-parkir {
+  background: #1a2432 url('/bg-parkir.jpg') center / cover no-repeat fixed;
+}
+
+/* Form */
+input, select, textarea { color: #f0f4f7; }
+input::placeholder, textarea::placeholder { color: #8fa0b0; }
+option { background: #2b3641; color: #f0f4f7; }
+input[type='date'], input[type='month'], input[type='time'], input[type='datetime-local'] { color-scheme: dark; }
+input:disabled, select:disabled, textarea:disabled { opacity: .6; }
+
+/* Scrollbar */
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.25) transparent; }
+
+/* Tabel */
+table { border-color: rgba(255,255,255,.12); }
+
+/* Cetak / print: kembali ke putih supaya struk & invoice terbaca */
+@media print {
+  html, body { background: #fff !important; color: #000 !important; }
+  body * {
+    color: #111 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-color: #ccc !important;
+    text-shadow: none !important;
+  }
+}
+
+/* Modal/popup: kartu kaca dibuat lebih pekat agar mudah dibaca */
+.fixed.inset-0 div.backdrop-blur-xl {
+  background-color: rgba(38, 50, 64, 0.94);
+}
