@@ -1,4 +1,6 @@
-﻿<script setup>
+<script setup>
+definePageMeta({ layout: false })
+
 import { ref } from 'vue'
 
 const config = useRuntimeConfig()

@@ -86,6 +86,7 @@ class ParkirController extends Controller
             'barcode'       => 'required|string',
             'nominal_bayar' => 'required|integer|min:0',
             'petugas_id'    => 'required|integer',
+            'plat_nomor'    => 'nullable|string|max:15',
         ]);
 
         $code = trim($request->barcode);
@@ -99,6 +100,31 @@ class ParkirController extends Controller
 
         if (!$tiket) {
             return response()->json(['message' => 'Tiket tidak valid atau sudah diproses'], 404);
+        }
+
+        // Validasi plat nomor untuk tiket member (harus dari daftar plat)
+        $platFinal = $tiket->plat_nomor; // plat lama (mungkin null)
+        if ($request->filled('plat_nomor')) {
+            $inputPlat = strtoupper(trim($request->plat_nomor));
+
+            if ($tiket->jenis === 'member' && $tiket->member) {
+                $allowedPlats = $tiket->member->daftar_plat;
+                $matched = false;
+                foreach ($allowedPlats as $p) {
+                    if (strtoupper(str_replace(' ', '', $p)) === strtoupper(str_replace(' ', '', $inputPlat))) {
+                        $matched = true;
+                        $inputPlat = $p; // pakai format asli
+                        break;
+                    }
+                }
+                if (!$matched) {
+                    $strAllowed = implode(', ', $allowedPlats);
+                    return response()->json([
+                        'message' => "Plat '{$request->plat_nomor}' tidak terdaftar pada kartu member ini. Plat yang diizinkan: [ {$strAllowed} ]"
+                    ], 422);
+                }
+            }
+            $platFinal = $inputPlat;
         }
 
         // Hitung final
@@ -122,6 +148,7 @@ class ParkirController extends Controller
             'total_harga'  => $totalHarga,
             'status'       => 'selesai',
             'petugas_id'   => $request->petugas_id,
+            'plat_nomor'   => $platFinal,
         ]);
 
         // Simpan transaksi
@@ -207,10 +234,12 @@ class ParkirController extends Controller
             'status'          => $tiket->status,
             'petugas'         => $tiket->petugas?->username,
             'member'          => $tiket->member ? [
-                'no_member'   => $tiket->member->no_member,
-                'nama'        => $tiket->member->nama,
-                'instansi'    => $tiket->member->instansi,
-                'daftar_plat' => $tiket->member->daftar_plat,
+                'no_member'          => $tiket->member->no_member,
+                'nama'               => $tiket->member->nama,
+                'instansi'           => $tiket->member->instansi,
+                'daftar_plat'        => $tiket->member->daftar_plat,
+                'daftar_plat_motor'  => $tiket->member->daftar_plat_motor ?? [],
+                'daftar_plat_mobil'  => $tiket->member->daftar_plat_mobil ?? [],
             ] : null,
         ];
     }

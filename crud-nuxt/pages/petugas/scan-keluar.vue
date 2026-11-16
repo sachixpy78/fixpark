@@ -14,6 +14,7 @@ const petugasId = ref(0)
 
 const nominalBayar = ref('')
 const bayarSuccess = ref(false)
+const platNomor    = ref('')
 
 onMounted(() => {
   nama.value = localStorage.getItem('user_name') || ''
@@ -30,6 +31,7 @@ const scan = async () => {
     popup.value = null
     bayarSuccess.value = false
     nominalBayar.value = ''
+    platNomor.value = ''
     const res = await $fetch('/parkir/scan-keluar', {
       baseURL: config.public.apiBase,
       method: 'POST',
@@ -61,11 +63,21 @@ const isMember = computed(() => result.value?.preview_keluar?.is_member === true
 const prosesBayar = async () => {
   if (!result.value) return
   if (!isMember.value && !isNominalCukup.value) return
+  // Untuk non-member: plat wajib diisi
+  if (!isMember.value && !platNomor.value.trim()) {
+    alert('Silakan input plat nomor kendaraan terlebih dahulu!')
+    return
+  }
+  // Untuk member: validasi plat harus ada di daftar
+  if (isMember.value && !platNomor.value.trim()) {
+    alert('Silakan pilih/input plat nomor kendaraan member!')
+    return
+  }
 
   try {
     loading.value = true
     const bayar = isMember.value ? 0 : nominalNumber.value
-    await $fetch('/parkir/bayar', {
+    const res = await $fetch('/parkir/bayar', {
       baseURL: config.public.apiBase,
       method: 'POST',
       headers: { Accept: 'application/json' },
@@ -73,8 +85,15 @@ const prosesBayar = async () => {
         barcode: result.value.tiket.barcode,
         nominal_bayar: bayar,
         petugas_id: petugasId.value,
+        plat_nomor: platNomor.value.trim().toUpperCase(),
       },
     })
+    // Update plat_nomor di result agar invoice menampilkan plat yang benar
+    if (res?.tiket?.plat_nomor) {
+      result.value.tiket.plat_nomor = res.tiket.plat_nomor
+    } else if (platNomor.value.trim()) {
+      result.value.tiket.plat_nomor = platNomor.value.trim().toUpperCase()
+    }
     bayarSuccess.value = true
   } catch (err) {
     alert(err?.data?.message || 'Gagal memproses pembayaran')
@@ -88,6 +107,7 @@ const reset = () => {
   popup.value = null
   bayarSuccess.value = false
   nominalBayar.value = ''
+  platNomor.value = ''
   barcode.value = ''
   nextTick(() => scanInput.value?.focus())
 }
@@ -131,6 +151,9 @@ const cetakInvoice = () => {
   const tiket = result.value.tiket
   const preview = result.value.preview_keluar
 
+  // Prioritaskan platNomor yang dipilih user, lalu dari tiket, lalu fallback '—'
+  const platDisplay = platNomor.value.trim().toUpperCase() || tiket.plat_nomor || '—'
+
   const html = `
     <!DOCTYPE html>
     <html>
@@ -165,7 +188,7 @@ const cetakInvoice = () => {
 
         <div class="row"><span class="label">Jenis Tiket</span><span class="value"><span class="badge ${tiket.jenis === 'member' ? 'badge-member' : 'badge-non'}">${tiket.jenis === 'member' ? 'Member' : 'Non-Member'}</span></span></div>
         <div class="row"><span class="label">Kendaraan</span><span class="value" style="text-transform:capitalize;">${tiket.jenis_kendaraan || '—'}</span></div>
-        <div class="row"><span class="label">Plat Nomor</span><span class="value">${tiket.plat_nomor || '—'}</span></div>
+        <div class="row"><span class="label">Plat Nomor</span><span class="value">${platDisplay}</span></div>
         ${tiket.member ? `<div class="row"><span class="label">Nama Member</span><span class="value">${tiket.member.nama}</span></div>` : ''}
         <div class="divider"></div>
         <div class="row"><span class="label">Waktu Masuk</span><span class="value">${formatTgl(tiket.waktu_masuk)}</span></div>
@@ -301,7 +324,7 @@ const cetakInvoice = () => {
                     </div>
                     <div>
                       <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Plat Nomor</p>
-                      <p class="font-bold text-white font-mono">{{ result.tiket.plat_nomor || '—' }}</p>
+                      <p class="font-bold text-white font-mono">{{ platNomor || result.tiket.plat_nomor || '—' }}</p>
                     </div>
                     <div v-if="result.tiket.member" class="col-span-2">
                       <p class="text-slate-400 text-xs uppercase tracking-wide mb-1">Nama Member</p>
@@ -440,7 +463,82 @@ const cetakInvoice = () => {
                 </div>
                 <div class="flex justify-between items-center py-2 border-b border-white/10">
                   <span class="text-sm text-slate-300">Metode</span>
-                  <span class="text-sm font-semibold text-white">Iuran Bulanan</span>
+                  <span class="text-sm font-semibold text-white">{{ isMember ? 'Iuran Bulanan' : 'Cash' }}</span>
+                </div>
+              </div>
+
+              <!-- INPUT PLAT NOMOR — wajib diisi sebelum proses -->
+              <div v-if="result && result.status === 'aktif'" class="mb-4">
+                <label class="block text-xs font-semibold text-slate-300 mb-2">
+                  Plat Nomor Kendaraan *
+                </label>
+
+                <!-- Member: pilih dari daftar plat -->
+                <div v-if="isMember && result.tiket?.member" class="space-y-2">
+                  <p class="text-xs text-slate-500 mb-1">Pilih plat yang digunakan ({{ result.tiket.jenis_kendaraan }}):</p>
+                  <button
+                    v-for="plat in (result.tiket.jenis_kendaraan === 'motor'
+                      ? (result.tiket.member.daftar_plat_motor || [])
+                      : (result.tiket.member.daftar_plat_mobil || []))"
+                    :key="plat"
+                    type="button"
+                    @click="platNomor = plat"
+                    :class="platNomor === plat
+                      ? 'bg-blue-600/30 border-blue-500 text-white'
+                      : 'bg-slate-700/50 border-slate-600 text-slate-300 hover:border-slate-500'"
+                    class="w-full px-4 py-2.5 border-2 rounded-xl flex items-center justify-between transition-all text-sm font-mono font-bold"
+                  >
+                    <span>{{ plat }}</span>
+                    <svg v-if="platNomor === plat" class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                    </svg>
+                  </button>
+                  <!-- Fallback jika daftar plat motor/mobil kosong, tampilkan semua -->
+                  <div v-if="!(result.tiket.jenis_kendaraan === 'motor'
+                    ? (result.tiket.member.daftar_plat_motor || []).length
+                    : (result.tiket.member.daftar_plat_mobil || []).length)"
+                    class="space-y-2">
+                    <button
+                      v-for="plat in (result.tiket.member.daftar_plat || [])"
+                      :key="plat"
+                      type="button"
+                      @click="platNomor = plat"
+                      :class="platNomor === plat
+                        ? 'bg-blue-600/30 border-blue-500 text-white'
+                        : 'bg-slate-700/50 border-slate-600 text-slate-300 hover:border-slate-500'"
+                      class="w-full px-4 py-2.5 border-2 rounded-xl flex items-center justify-between transition-all text-sm font-mono font-bold"
+                    >
+                      <span>{{ plat }}</span>
+                      <svg v-if="platNomor === plat" class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <!-- Input manual jika perlu -->
+                  <input
+                    v-model="platNomor"
+                    type="text"
+                    placeholder="Atau ketik plat manual..."
+                    class="w-full px-4 py-2.5 bg-slate-700/50 border-2 border-slate-600 rounded-xl text-sm font-mono font-bold uppercase outline-none transition-all text-white placeholder:text-slate-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <!-- Non-member: input bebas -->
+                <div v-else class="relative">
+                  <input
+                    v-model="platNomor"
+                    type="text"
+                    placeholder="Contoh: BA 1234 CD"
+                    maxlength="12"
+                    class="w-full px-4 py-3.5 bg-slate-700/50 border-2 border-slate-600 rounded-xl text-base font-mono font-bold uppercase outline-none transition-all text-white placeholder:text-slate-500"
+                    :class="platNomor.trim() ? 'border-blue-500/60 bg-blue-500/10' : ''"
+                    @input="platNomor = platNomor.toUpperCase()"
+                  />
+                  <div v-if="platNomor.trim()" class="absolute right-3 top-1/2 -translate-y-1/2">
+                    <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  </div>
                 </div>
               </div>
 

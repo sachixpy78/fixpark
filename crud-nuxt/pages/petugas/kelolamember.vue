@@ -16,18 +16,21 @@ const showModal         = ref(false)
 const editMode          = ref(false)
 const selectedId        = ref(null)
 const saving            = ref(false)
-const kirimLoading      = ref(null)
-const perpanjangLoading = ref(null)
+const kirimLoading       = ref(null)
+const perpanjangLoading  = ref(null)
+const reminderLoading    = ref(null)   // loading per member
+const reminderSemuaLoading = ref(false) // loading kirim ke semua expired
 
 // Detail modal
 const showDetailModal = ref(false)
 const detailData      = ref(null)
 
 // Modal Perpanjang Member dengan Form Input Nominal
-const showPerpanjangModal = ref(false)
-const perpanjangTarget    = ref(null)
-const nominalBayar        = ref('')
-const biayaPerpanjang     = 150000
+const showPerpanjangModal  = ref(false)
+const perpanjangTarget     = ref(null)
+const nominalBayar         = ref('')
+const biayaPerpanjang      = 150000
+const perpanjangSuccessMsg = ref('')  // notifikasi sukses perpanjang (tanpa alert browser)
 
 const nominalNumber = computed(() => Number(nominalBayar.value) || 0)
 const kembalian     = computed(() => Math.max(0, nominalNumber.value - biayaPerpanjang))
@@ -44,6 +47,19 @@ const bukaModalPerpanjang = (m) => {
 
 const setNominal = (val) => {
   nominalBayar.value = val
+}
+
+// Pembayaran Cash Member Baru (Minimal Rp 150.000)
+const nominalBayarDaftar = ref('')
+const biayaDaftarMember  = 150000
+
+const nominalDaftarNumber  = computed(() => Number(nominalBayarDaftar.value) || 0)
+const kembalianDaftar      = computed(() => Math.max(0, nominalDaftarNumber.value - biayaDaftarMember))
+const sisaKurangDaftar     = computed(() => Math.max(0, biayaDaftarMember - nominalDaftarNumber.value))
+const isNominalDaftarCukup = computed(() => nominalDaftarNumber.value >= biayaDaftarMember)
+
+const setNominalDaftar = (val) => {
+  nominalBayarDaftar.value = val
 }
 
 const form = reactive({
@@ -103,6 +119,7 @@ const filtered = computed(() => {
 const openTambah = () => {
   editMode.value = false
   selectedId.value = null
+  nominalBayarDaftar.value = ''
   Object.assign(form, {
     nama: '',
     instansi: '',
@@ -154,6 +171,10 @@ const simpan = async () => {
     formError.value = 'Minimal isi satu plat nomor (plat motor atau plat mobil)!'
     return
   }
+  if (!editMode.value && !isNominalDaftarCukup.value) {
+    formError.value = 'Pembayaran cash minimal Rp 150.000! Uang cash yang dimasukkan belum mencukupi.'
+    return
+  }
   try {
     saving.value = true
     formError.value = ''
@@ -169,13 +190,23 @@ const simpan = async () => {
         baseURL: config.public.apiBase,
         method: 'POST',
         headers: { Accept: 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: form,
+        body: {
+          ...form,
+          nominal_bayar: nominalDaftarNumber.value,
+        },
       })
     }
     showModal.value = false
     await fetchMembers()
     if (!editMode.value) {
-      alert('Pendaftaran berhasil! Kartu member telah dikirim ke email.')
+      alert(
+        `Pendaftaran Member Berhasil!\n\n` +
+        `Nama: ${form.nama}\n` +
+        `Biaya: ${formatRupiah(biayaDaftarMember)}\n` +
+        `Uang Diterima: ${formatRupiah(nominalDaftarNumber.value)}\n` +
+        `Kembalian: ${formatRupiah(kembalianDaftar.value)}\n\n` +
+        `Kartu member telah dikirim ke email ${form.email}.`
+      )
     }
   } catch (err) {
     const errs = err?.data?.errors
@@ -191,23 +222,26 @@ const prosesPerpanjang = async () => {
   const m = perpanjangTarget.value
   try {
     perpanjangLoading.value = m.id
-    const res = await $fetch(`/member/${m.id}/perpanjang`, {
+    await $fetch(`/member/${m.id}/perpanjang`, {
       baseURL: config.public.apiBase,
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${getToken()}` },
     })
-    
-    alert(
-      `Pembayaran Cash Berhasil Diterima!\n\n` +
-      `Member: ${m.nama} (${m.no_member})\n` +
-      `Uang Diterima: ${formatRupiah(nominalNumber.value)}\n` +
-      `Kembalian: ${formatRupiah(kembalian.value)}\n\n` +
-      `Masa aktif berhasil diperpanjang 30 hari ke depan dan kartu member baru telah dikirim ke email ${m.email}.`
-    )
+
+    // Tutup modal dan tampilkan notifikasi sukses (tanpa alert browser)
     showPerpanjangModal.value = false
+    perpanjangSuccessMsg.value = `Perpanjangan berhasil! Member ${m.nama} aktif 30 hari ke depan. Uang diterima: ${formatRupiah(nominalNumber.value)}, kembalian: ${formatRupiah(kembalian.value)}.`
+    setTimeout(() => { perpanjangSuccessMsg.value = '' }, 6000)
     await fetchMembers()
   } catch (err) {
-    alert(err?.data?.message || 'Gagal memperpanjang member')
+    // Tampilkan error di dalam modal (bukan alert browser)
+    perpanjangSuccessMsg.value = ''
+    const msg = err?.data?.message || 'Gagal memperpanjang member. Silakan coba lagi.'
+    // Jika error mengandung SSL/SMTP, tampilkan pesan yang lebih ramah
+    const friendlyMsg = (msg.includes('SSL') || msg.includes('STARTTLS') || msg.includes('certificate'))
+      ? 'Perpanjangan berhasil dicatat, namun pengiriman email kartu member gagal (koneksi email). Data sudah tersimpan.'
+      : msg
+    alert(friendlyMsg)
   } finally {
     perpanjangLoading.value = null
   }
@@ -241,6 +275,50 @@ const kirimUlang = async (m) => {
     alert(err?.data?.message || 'Gagal mengirim')
   } finally {
     kirimLoading.value = null
+  }
+}
+
+// Kirim reminder expired ke satu member
+const kirimReminderSatu = async (m) => {
+  try {
+    reminderLoading.value = m.id
+    await $fetch(`/member/${m.id}/kirim-reminder`, {
+      baseURL: config.public.apiBase,
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${getToken()}` },
+    })
+    perpanjangSuccessMsg.value = `Email reminder berhasil dikirim ke ${m.email}.`
+    setTimeout(() => { perpanjangSuccessMsg.value = '' }, 5000)
+  } catch (err) {
+    const msg = err?.data?.message || 'Gagal mengirim reminder'
+    const friendly = (msg.includes('SSL') || msg.includes('STARTTLS') || msg.includes('certificate'))
+      ? 'Koneksi email bermasalah. Pastikan pengaturan SMTP sudah benar.'
+      : msg
+    alert(friendly)
+  } finally {
+    reminderLoading.value = null
+  }
+}
+
+// Kirim reminder ke SEMUA member yang expired
+const kirimReminderSemua = async () => {
+  try {
+    reminderSemuaLoading.value = true
+    const res = await $fetch('/member/kirim-reminder-semua', {
+      baseURL: config.public.apiBase,
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${getToken()}` },
+    })
+    perpanjangSuccessMsg.value = res.message || 'Reminder berhasil dikirim.'
+    setTimeout(() => { perpanjangSuccessMsg.value = '' }, 7000)
+  } catch (err) {
+    const msg = err?.data?.message || 'Gagal mengirim reminder'
+    const friendly = (msg.includes('SSL') || msg.includes('STARTTLS') || msg.includes('certificate'))
+      ? 'Koneksi email bermasalah. Pastikan pengaturan SMTP sudah benar.'
+      : msg
+    alert(friendly)
+  } finally {
+    reminderSemuaLoading.value = false
   }
 }
 
@@ -281,6 +359,18 @@ const formatWaktuLengkap = (d) =>
   <div>
     <div class="p-6 md:p-8">
       <div class="max-w-5xl mx-auto">
+
+        <!-- Toast Notifikasi Sukses Perpanjang -->
+        <Transition enter-active-class="transition duration-300 ease-out" enter-from-class="opacity-0 -translate-y-2" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition duration-200 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
+          <div v-if="perpanjangSuccessMsg" class="mb-4 flex items-start gap-3 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 rounded-xl px-4 py-3 text-sm font-medium shadow-lg">
+            <svg class="w-5 h-5 flex-shrink-0 mt-0.5 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>{{ perpanjangSuccessMsg }}</span>
+            <button @click="perpanjangSuccessMsg = ''" class="ml-auto text-emerald-400 hover:text-white transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+        </Transition>
+
         <!-- Header dengan Tombol di Kanan -->
         <div class="mb-8 flex items-center justify-between gap-4">
           <div>
@@ -293,6 +383,19 @@ const formatWaktuLengkap = (d) =>
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
             </svg>
             Tambah Member
+          </button>
+          <!-- Tombol Kirim Reminder ke Semua Expired -->
+          <button @click="kirimReminderSemua" :disabled="reminderSemuaLoading"
+            class="flex-shrink-0 flex items-center gap-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 font-semibold px-4 py-2.5 rounded-xl border border-orange-500/40 transition disabled:opacity-50"
+            title="Kirim email pengingat ke semua member yang expired">
+            <svg v-if="reminderSemuaLoading" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+            {{ reminderSemuaLoading ? 'Mengirim...' : 'Reminder Semua Expired' }}
           </button>
         </div>
 
@@ -421,6 +524,22 @@ const formatWaktuLengkap = (d) =>
                               d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                           </svg>
                           Perpanjang
+                        </button>
+
+                        <!-- Kirim Reminder Email (hanya jika expired) -->
+                        <button v-if="m.is_expired || m.status_label === 'expired'"
+                          @click="kirimReminderSatu(m)"
+                          :disabled="reminderLoading === m.id"
+                          class="inline-flex items-center gap-1.5 text-xs bg-orange-500/20 hover:bg-orange-500/30 text-orange-300 font-medium px-3 py-2 rounded-lg transition border border-orange-500/30 disabled:opacity-50"
+                          title="Kirim Email Reminder Perpanjang">
+                          <svg v-if="reminderLoading === m.id" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                          </svg>
+                          <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                          </svg>
+                          Reminder
                         </button>
 
                         <!-- Edit -->
@@ -628,16 +747,77 @@ const formatWaktuLengkap = (d) =>
             </button>
           </div>
 
-          <!-- Info pembayaran cash 150 ribu -->
-          <div v-if="!editMode"
-            class="text-sm text-amber-300 bg-amber-500/20 border border-amber-500/30 rounded-xl p-4 mb-5 flex items-start gap-2">
-            <svg class="w-5 h-5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-            </svg>
+          <!-- Input Pembayaran Cash Pendaftaran Member Baru (Minimal Rp 150.000) -->
+          <div v-if="!editMode" class="bg-slate-700/40 border border-white/10 rounded-2xl p-4 mb-5 space-y-3">
+            <div class="flex items-center justify-between pb-2 border-b border-white/10">
+              <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <rect x="2" y="5" width="20" height="14" rx="2"/>
+                    <line x1="2" y1="10" x2="22" y2="10"/>
+                  </svg>
+                </div>
+                <div>
+                  <div class="text-xs font-bold text-white uppercase tracking-wider">Biaya Member Baru (Cash)</div>
+                  <div class="text-[11px] text-slate-400">Masa aktif 30 hari & parkir gratis</div>
+                </div>
+              </div>
+              <span class="font-black text-emerald-400 text-sm">Rp 150.000</span>
+            </div>
+
+            <!-- Quick Select Uang -->
             <div>
-              <div class="font-bold">Konfirmasi Pembayaran Cash Rp 150.000</div>
-              <div class="text-xs text-amber-300/90 mt-0.5">
-                Member baru aktif selama <strong>30 hari</strong> sejak tanggal pendaftaran dan otomatis dikirim kartu ke email.
+              <label class="block text-[11px] font-semibold text-slate-300 mb-1.5">Pilihan Nominal Cepat:</label>
+              <div class="grid grid-cols-4 gap-1.5">
+                <button
+                  v-for="uang in [150000, 200000, 300000, 500000]"
+                  :key="uang"
+                  type="button"
+                  @click="setNominalDaftar(uang)"
+                  class="py-1.5 px-2 text-[10px] font-semibold rounded-lg border transition text-center"
+                  :class="nominalDaftarNumber === uang ? 'bg-gradient-to-r from-emerald-600 to-emerald-700 text-white border-emerald-500 shadow-md shadow-emerald-900/40' : 'bg-slate-700/60 text-slate-300 hover:bg-slate-600 border-slate-600'"
+                >
+                  {{ uang === 150000 ? 'Uang Pas' : Number(uang/1000) + 'rb' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Input Uang Cash Diterima -->
+            <div>
+              <label class="block text-[11px] font-bold text-slate-300 mb-1">
+                Nominal Uang Cash Diterima (Min. Rp 150.000) *
+              </label>
+              <div class="relative">
+                <span class="absolute left-3.5 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-xs">Rp</span>
+                <input
+                  v-model.number="nominalBayarDaftar"
+                  type="number"
+                  placeholder="Contoh: 150000"
+                  class="w-full pl-10 pr-3 py-2.5 border-2 rounded-xl text-sm font-bold outline-none transition-all bg-slate-700/60 text-white placeholder:text-slate-500"
+                  :class="!nominalBayarDaftar ? 'border-slate-600 focus:border-blue-500' : (isNominalDaftarCukup ? 'border-emerald-500/60 bg-emerald-500/10 text-emerald-300' : 'border-rose-500/60 bg-rose-500/10 text-rose-300')"
+                />
+              </div>
+            </div>
+
+            <!-- Status Kembalian atau Kurang -->
+            <div v-if="nominalBayarDaftar">
+              <div v-if="isNominalDaftarCukup" class="p-2.5 bg-emerald-500/15 border border-emerald-500/30 rounded-xl text-emerald-300 text-xs flex justify-between items-center">
+                <span class="font-semibold flex items-center gap-1.5">
+                  <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+                  </svg>
+                  Uang Cukup!
+                </span>
+                <span class="font-bold">Kembalian: {{ formatRupiah(kembalianDaftar) }}</span>
+              </div>
+              <div v-else class="p-2.5 bg-rose-500/15 border border-rose-500/30 rounded-xl text-rose-300 text-xs flex justify-between items-center">
+                <span class="font-semibold flex items-center gap-1.5">
+                  <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  Uang Belum Cukup!
+                </span>
+                <span class="font-bold">Kurang: {{ formatRupiah(sisaKurangDaftar) }}</span>
               </div>
             </div>
           </div>
@@ -743,8 +923,8 @@ const formatWaktuLengkap = (d) =>
               class="flex-1 py-3 border-2 border-slate-600 text-slate-300 hover:bg-slate-700/50 font-semibold rounded-xl transition">
               Batal
             </button>
-            <button @click="simpan" :disabled="saving"
-              class="flex-1 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-60 text-white font-bold rounded-xl transition shadow-lg shadow-blue-900/40 hover:shadow-blue-500/50">
+            <button @click="simpan" :disabled="saving || (!editMode && !isNominalDaftarCukup)"
+              class="flex-1 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl transition shadow-lg shadow-blue-900/40 hover:shadow-blue-500/50">
               {{ saving ? 'Menyimpan...' : (editMode ? 'Simpan Perubahan' : 'Daftarkan Member') }}
             </button>
           </div>

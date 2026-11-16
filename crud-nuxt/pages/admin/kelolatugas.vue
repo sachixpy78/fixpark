@@ -19,6 +19,21 @@ const showPassword   = ref(false)
 
 const form = ref({ username: '', email: '', password: '' })
 const formErr = ref('')
+const gambarFile = ref(null)
+const gambarPreview = ref(null)
+
+const handleGambarUpload = (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  gambarFile.value = file
+  gambarPreview.value = URL.createObjectURL(file)
+}
+
+const getGambarUrl = (path) => {
+  if (!path) return null
+  if (path.startsWith('http')) return path
+  return `${config.public.apiBase.replace('/api', '')}/storage/${path}`
+}
 
 const getToken = () => (import.meta.client ? localStorage.getItem('auth_token') ?? '' : '')
 
@@ -42,6 +57,8 @@ const openModal = () => {
   form.value = { username: '', email: '', password: '' }
   formErr.value = ''
   showPassword.value = false
+  gambarFile.value = null
+  gambarPreview.value = null
   modalOpen.value = true
 }
 
@@ -53,11 +70,16 @@ const simpan = async () => {
   try {
     saving.value = true
     formErr.value = ''
+    const payload = new FormData()
+    payload.append('username', form.value.username)
+    payload.append('email', form.value.email)
+    payload.append('password', form.value.password)
+    if (gambarFile.value) payload.append('gambar', gambarFile.value)
     await $fetch('/petugas', {
       baseURL: config.public.apiBase,
       method: 'POST',
       headers: { Authorization: `Bearer ${getToken()}`, Accept: 'application/json' },
-      body: form.value,
+      body: payload,
     })
     modalOpen.value = false
     await fetchList()
@@ -169,6 +191,7 @@ onMounted(fetchList)
               <thead>
                 <tr class="text-left bg-slate-700/50 text-slate-100 border-b border-white/10">
                   <th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">ID</th>
+                  <th class="px-4 py-4 font-semibold text-xs uppercase tracking-wider">Foto</th>
                   <th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Username</th>
                   <th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Email</th>
                   <th class="px-6 py-4 font-semibold text-xs uppercase tracking-wider">Dibuat</th>
@@ -179,7 +202,7 @@ onMounted(fetchList)
               </thead>
               <tbody>
                 <tr v-if="list.length === 0">
-                  <td colspan="7" class="text-center py-12 text-slate-400">
+                  <td colspan="8" class="text-center py-12 text-slate-400">
                     <div class="flex flex-col items-center gap-2">
                       <svg class="w-12 h-12 text-slate-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
@@ -192,6 +215,17 @@ onMounted(fetchList)
                   :class="i % 2 === 0 ? 'bg-slate-800/40' : 'bg-slate-800/20'"
                   class="hover:bg-blue-500/10 transition border-b border-white/5 last:border-b-0">
                   <td class="px-6 py-4 font-mono text-slate-400 text-xs">#{{ p.id }}</td>
+                  <!-- FOTO -->
+                  <td class="px-4 py-3">
+                    <img v-if="p.gambar" :src="getGambarUrl(p.gambar)"
+                      class="w-10 h-10 rounded-full object-cover border-2 border-slate-600 shadow"
+                      alt="foto"
+                    />
+                    <div v-else
+                      class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-bold text-sm shadow border-2 border-slate-600">
+                      {{ p.username?.charAt(0).toUpperCase() }}
+                    </div>
+                  </td>
                   <td class="px-6 py-4 font-semibold text-slate-100">{{ p.username }}</td>
                   <td class="px-6 py-4 text-slate-300">{{ p.email }}</td>
                   <td class="px-6 py-4 text-slate-300">{{ formatTgl(p.created_at) }}</td>
@@ -322,6 +356,49 @@ onMounted(fetchList)
           </div>
 
           <div class="space-y-4">
+            <!-- FOTO PROFIL UPLOAD -->
+            <div>
+              <label class="block text-sm font-semibold text-slate-300 mb-2">Foto Profil <span class="text-slate-500 font-normal">(opsional)</span></label>
+              <!-- Preview -->
+              <div class="flex justify-center mb-3">
+                <div class="relative">
+                  <img v-if="gambarPreview" :src="gambarPreview"
+                    class="w-20 h-20 rounded-full object-cover border-2 border-blue-500/50 shadow-lg"
+                    alt="Preview"
+                  />
+                  <div v-else class="w-20 h-20 rounded-full bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center border-2 border-slate-600 shadow">
+                    <svg class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/>
+                    </svg>
+                  </div>
+                  <!-- Badge -->
+                  <label class="absolute -bottom-1 -right-1 w-7 h-7 bg-blue-600 hover:bg-blue-500 rounded-full flex items-center justify-center cursor-pointer border-2 border-slate-800 transition shadow">
+                    <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"/>
+                    </svg>
+                    <input type="file" accept="image/*" @change="handleGambarUpload" class="hidden"/>
+                  </label>
+                </div>
+              </div>
+              <!-- Drop area -->
+              <label class="block cursor-pointer">
+                <div class="flex items-center gap-3 p-3 border-2 border-dashed border-slate-600 rounded-xl hover:border-blue-500/50 hover:bg-blue-500/5 transition-all">
+                  <div class="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/>
+                    </svg>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm text-white font-medium truncate">
+                      {{ gambarFile ? gambarFile.name : 'Klik untuk pilih foto' }}
+                    </p>
+                    <p class="text-xs text-slate-500 mt-0.5">PNG, JPG maks. 2MB</p>
+                  </div>
+                  <span class="text-xs text-blue-400 font-semibold px-3 py-1.5 bg-blue-500/10 rounded-lg flex-shrink-0">Pilih</span>
+                </div>
+                <input type="file" accept="image/*" @change="handleGambarUpload" class="hidden"/>
+              </label>
+            </div>
             <div>
               <label class="block text-sm font-semibold text-slate-300 mb-2">Username *</label>
               <input v-model="form.username" type="text" placeholder="username_petugas"

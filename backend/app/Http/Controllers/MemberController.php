@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Member;
+use App\Models\MemberRenewal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Mail;
 use BaconQrCode\Encoder\Encoder;
@@ -61,10 +62,10 @@ class MemberController extends Controller
         }
 
         return response()->json([
-            'no_member'        => $member->no_member,
-            'nama'             => $member->nama,
-            'instansi'         => $member->instansi,
-            'daftar_plat'      => $member->daftar_plat,
+            'no_member'         => $member->no_member,
+            'nama'              => $member->nama,
+            'instansi'          => $member->instansi,
+            'daftar_plat'       => $member->daftar_plat,
             'daftar_plat_motor' => $member->daftar_plat_motor,
             'daftar_plat_mobil' => $member->daftar_plat_mobil,
         ]);
@@ -74,18 +75,20 @@ class MemberController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'nama'     => 'required|string|max:100',
-            'instansi' => 'required|string|max:150',
-            'email'    => 'required|email|unique:members,email',
-            'telepon'  => 'nullable|string|max:20',
-            'motor_1'  => 'nullable|string|max:15',
-            'motor_2'  => 'nullable|string|max:15',
-            'motor_3'  => 'nullable|string|max:15',
-            'mobil_1'  => 'nullable|string|max:15',
-            'mobil_2'  => 'nullable|string|max:15',
-            'mobil_3'  => 'nullable|string|max:15',
+            'nama'          => 'required|string|max:100',
+            'instansi'      => 'required|string|max:150',
+            'email'         => 'required|email|unique:members,email',
+            'telepon'       => 'nullable|string|max:20',
+            'motor_1'       => 'nullable|string|max:15',
+            'motor_2'       => 'nullable|string|max:15',
+            'motor_3'       => 'nullable|string|max:15',
+            'mobil_1'       => 'nullable|string|max:15',
+            'mobil_2'       => 'nullable|string|max:15',
+            'mobil_3'       => 'nullable|string|max:15',
+            'nominal_bayar' => 'nullable|numeric|min:150000',
         ], [
-            'email.unique' => 'Email sudah terdaftar sebagai member.',
+            'email.unique'      => 'Email sudah terdaftar sebagai member.',
+            'nominal_bayar.min' => 'Pembayaran cash minimal Rp 150.000.',
         ]);
 
         // Minimal harus ada 1 plat (motor atau mobil)
@@ -114,12 +117,18 @@ class MemberController extends Controller
             'status'         => 'aktif',
         ]);
 
-        // Kirim kartu member via email
-        $this->kirimKartuMember($member);
+        // Kirim kartu member via email (abaikan jika gagal)
+        $emailError = null;
+        try {
+            $this->kirimKartuMember($member);
+        } catch (\Throwable $e) {
+            $emailError = 'Email gagal dikirim: ' . $e->getMessage();
+        }
 
         return response()->json([
-            'message' => 'Member berhasil didaftarkan! Kartu member telah dikirim ke email.',
-            'data'    => $member,
+            'message'      => "Member '{$member->nama}' berhasil didaftarkan." . ($emailError ? ' ' . $emailError : ' Kartu member dikirim ke email.'),
+            'data'         => $member,
+            'email_status' => $emailError ? 'failed' : 'sent',
         ], 201);
     }
 
@@ -132,9 +141,9 @@ class MemberController extends Controller
         }
 
         $request->validate([
-            'nama'     => 'sometimes|string|max:100',
-            'instansi' => 'sometimes|string|max:150',
-            'email'    => 'sometimes|email|unique:members,email,' . $id,
+            'nama'     => 'required|string|max:100',
+            'instansi' => 'required|string|max:150',
+            'email'    => 'required|email|unique:members,email,' . $id,
             'telepon'  => 'nullable|string|max:20',
             'motor_1'  => 'nullable|string|max:15',
             'motor_2'  => 'nullable|string|max:15',
@@ -142,24 +151,27 @@ class MemberController extends Controller
             'mobil_1'  => 'nullable|string|max:15',
             'mobil_2'  => 'nullable|string|max:15',
             'mobil_3'  => 'nullable|string|max:15',
-            'status'   => 'sometimes|in:aktif,nonaktif',
+            'status'   => 'nullable|in:aktif,nonaktif',
         ]);
 
-        $data = $request->only(['nama', 'instansi', 'email', 'telepon', 'status']);
-        if ($request->has('motor_1')) $data['motor_1'] = $request->motor_1 ? strtoupper(trim($request->motor_1)) : null;
-        if ($request->has('motor_2')) $data['motor_2'] = $request->motor_2 ? strtoupper(trim($request->motor_2)) : null;
-        if ($request->has('motor_3')) $data['motor_3'] = $request->motor_3 ? strtoupper(trim($request->motor_3)) : null;
-        if ($request->has('mobil_1')) $data['mobil_1'] = $request->mobil_1 ? strtoupper(trim($request->mobil_1)) : null;
-        if ($request->has('mobil_2')) $data['mobil_2'] = $request->mobil_2 ? strtoupper(trim($request->mobil_2)) : null;
-        if ($request->has('mobil_3')) $data['mobil_3'] = $request->mobil_3 ? strtoupper(trim($request->mobil_3)) : null;
-
-        $member->update($data);
+        $member->update([
+            'nama'     => $request->nama,
+            'instansi' => $request->instansi,
+            'email'    => $request->email,
+            'telepon'  => $request->telepon,
+            'motor_1'  => $request->motor_1 ? strtoupper(trim($request->motor_1)) : null,
+            'motor_2'  => $request->motor_2 ? strtoupper(trim($request->motor_2)) : null,
+            'motor_3'  => $request->motor_3 ? strtoupper(trim($request->motor_3)) : null,
+            'mobil_1'  => $request->mobil_1 ? strtoupper(trim($request->mobil_1)) : null,
+            'mobil_2'  => $request->mobil_2 ? strtoupper(trim($request->mobil_2)) : null,
+            'mobil_3'  => $request->mobil_3 ? strtoupper(trim($request->mobil_3)) : null,
+            'status'   => $request->status ?? $member->status,
+        ]);
 
         return response()->json(['message' => 'Member berhasil diperbarui', 'data' => $member]);
     }
 
     // POST /api/member/{id}/perpanjang
-    // Perpanjang masa aktif kartu member (+30 hari) dengan konfirmasi pembayaran
     public function perpanjang($id)
     {
         $member = Member::find($id);
@@ -167,8 +179,6 @@ class MemberController extends Controller
             return response()->json(['message' => 'Member tidak ditemukan'], 404);
         }
 
-        // Jika masa aktif lama masih berlaku di masa depan, tambahkan 30 hari dari masa aktif lama
-        // Jika sudah lewat (expired), hitung 30 hari dari sekarang
         $currentMasaAktif = $member->masa_aktif;
         if ($currentMasaAktif && $currentMasaAktif->gt(now())) {
             $newMasaAktif = $currentMasaAktif->copy()->addDays(30);
@@ -181,13 +191,43 @@ class MemberController extends Controller
             'status'     => 'aktif',
         ]);
 
-        // Kirim email kartu member yang baru diperpanjang
-        $this->kirimKartuMember($member);
+        // Log riwayat perpanjang member
+        MemberRenewal::create([
+            'member_id'       => $member->id,
+            'no_member'       => $member->no_member,
+            'nama_member'     => $member->nama,
+            'instansi'        => $member->instansi,
+            'masa_aktif_lama' => $currentMasaAktif ? $currentMasaAktif->toDateString() : null,
+            'masa_aktif_baru' => $newMasaAktif->toDateString(),
+            'nominal_bayar'   => 150000,
+        ]);
+
+        // Kirim email kartu member yang baru diperpanjang (abaikan jika gagal)
+        $emailError = null;
+        try {
+            $this->kirimKartuMember($member);
+        } catch (\Throwable $e) {
+            $emailError = 'Email gagal dikirim: ' . $e->getMessage();
+        }
 
         return response()->json([
-            'message' => "Member '{$member->nama}' berhasil diperpanjang hingga " . $newMasaAktif->format('d/m/Y') . ". Kartu baru dikirim ke email.",
-            'data'    => $member,
+            'message'      => "Member '{$member->nama}' berhasil diperpanjang hingga " . $newMasaAktif->format('d/m/Y') . ($emailError ? '. ' . $emailError : '. Kartu baru dikirim ke email.'),
+            'data'         => $member,
+            'email_status' => $emailError ? 'failed' : 'sent',
         ]);
+    }
+
+    // GET /api/member-renewals
+    public function renewalIndex(Request $request)
+    {
+        $query = MemberRenewal::latest();
+        if ($request->tanggal_dari) {
+            $query->whereDate('created_at', '>=', $request->tanggal_dari);
+        }
+        if ($request->tanggal_sampai) {
+            $query->whereDate('created_at', '<=', $request->tanggal_sampai);
+        }
+        return response()->json($query->get());
     }
 
     // DELETE /api/member/{id}
@@ -208,47 +248,139 @@ class MemberController extends Controller
         if (!$member) {
             return response()->json(['message' => 'Member tidak ditemukan'], 404);
         }
-        $this->kirimKartuMember($member);
+
+        $emailError = null;
+        try {
+            $this->kirimKartuMember($member);
+        } catch (\Throwable $e) {
+            $emailError = $e->getMessage();
+        }
+
+        if ($emailError) {
+            return response()->json(['message' => 'Gagal mengirim email: ' . $emailError], 500);
+        }
+
         return response()->json(['message' => 'Kartu member berhasil dikirim ulang ke ' . $member->email]);
     }
 
     // ========================
-    // HELPER: Generate nomor member
+    // POST /api/member/{id}/kirim-reminder
+    // Kirim email pengingat perpanjang ke satu member yang expired
+    // ========================
+    public function kirimReminder($id)
+    {
+        $member = Member::find($id);
+        if (!$member) {
+            return response()->json(['message' => 'Member tidak ditemukan'], 404);
+        }
+
+        $emailError = null;
+        try {
+            $this->kirimEmailReminder($member);
+        } catch (\Throwable $e) {
+            $emailError = $e->getMessage();
+        }
+
+        if ($emailError) {
+            return response()->json([
+                'message'      => 'Gagal mengirim reminder: ' . $emailError,
+                'email_status' => 'failed',
+            ], 500);
+        }
+
+        return response()->json([
+            'message'      => "Reminder perpanjang berhasil dikirim ke {$member->email}.",
+            'email_status' => 'sent',
+        ]);
+    }
+
+    // ========================
+    // POST /api/member/kirim-reminder-semua
+    // Kirim reminder ke SEMUA member yang sudah expired
+    // ========================
+    public function kirimReminderSemua()
+    {
+        $expired = Member::where('status', 'aktif')
+            ->where('masa_aktif', '<', now()->toDateString())
+            ->get();
+
+        if ($expired->isEmpty()) {
+            return response()->json(['message' => 'Tidak ada member expired saat ini.', 'sent' => 0]);
+        }
+
+        $berhasil = 0;
+        $gagal    = 0;
+        foreach ($expired as $member) {
+            try {
+                $this->kirimEmailReminder($member);
+                $berhasil++;
+            } catch (\Throwable $e) {
+                $gagal++;
+            }
+        }
+
+        return response()->json([
+            'message' => "Reminder terkirim ke {$berhasil} member. Gagal: {$gagal}.",
+            'sent'    => $berhasil,
+            'failed'  => $gagal,
+        ]);
+    }
+
+    // ========================
+    // HELPER: Generate nomor member unik
     // ========================
     private function generateNoMember(): string
     {
         $prefix = 'MBR-' . now()->format('Ymd') . '-';
-        $count  = Member::where('no_member', 'like', $prefix . '%')->count();
-        return $prefix . str_pad($count + 1, 3, '0', STR_PAD_LEFT);
+        $last   = Member::where('no_member', 'like', $prefix . '%')->orderByDesc('no_member')->first();
+        $seq    = $last ? ((int) substr($last->no_member, -3)) + 1 : 1;
+        return $prefix . str_pad($seq, 3, '0', STR_PAD_LEFT);
     }
 
     // ========================
-    // HELPER: Generate QR PNG Binary via BaconQrCode + GD murni
-    // Tidak butuh imagick, 100% kompatibel XAMPP
+    // HELPER: Kirim email kartu member aktif (dengan QR Code inline)
+    // ========================
+    private function kirimKartuMember(Member $member): void
+    {
+        $pngBinary = $this->generateQrPngBinary($member->no_member);
+
+        Mail::send([], [], function ($message) use ($member, $pngBinary) {
+            $qrCid = $message->embedData($pngBinary, 'qrcode-member.png', 'image/png');
+
+            $html = $this->templateKartu($member, $qrCid);
+
+            $message->to($member->email)
+                    ->subject('Kartu Member E-Parkir Plaza Andalas - ' . $member->no_member)
+                    ->html($html)
+                    ->attachData($pngBinary, "QR-Member-{$member->no_member}.png", [
+                        'mime' => 'image/png',
+                    ]);
+        });
+    }
+
+    // ========================
+    // HELPER: Generate QR PNG Binary dari string
     // ========================
     private function generateQrPngBinary(string $text): string
     {
-        $qr = Encoder::encode($text, ErrorCorrectionLevel::M(), 'UTF-8');
-        $matrix = $qr->getMatrix();
-        $width  = $matrix->getWidth();
-        $height = $matrix->getHeight();
+        $encoder    = new Encoder();
+        $ecLevel    = ErrorCorrectionLevel::M();
+        $qrCode     = $encoder->encode($text, $ecLevel, 'UTF-8');
+        $matrix     = $qrCode->getMatrix();
+        $size       = $matrix->getWidth();
+        $scale      = 8;
+        $padding    = 24;
+        $dim        = $size * $scale + $padding * 2;
+        $img        = imagecreatetruecolor($dim, $dim);
+        $white      = imagecolorallocate($img, 255, 255, 255);
+        $black      = imagecolorallocate($img, 0, 0, 0);
+        imagefill($img, 0, 0, $white);
 
-        $scale     = 6; // ukuran module pixel
-        $border    = 2; // quiet zone
-        $imgWidth  = ($width + 2 * $border) * $scale;
-        $imgHeight = ($height + 2 * $border) * $scale;
-
-        $img   = imagecreatetruecolor($imgWidth, $imgHeight);
-        $white = imagecolorallocate($img, 255, 255, 255);
-        $black = imagecolorallocate($img, 0, 0, 0);
-
-        imagefilledrectangle($img, 0, 0, $imgWidth, $imgHeight, $white);
-
-        for ($y = 0; $y < $height; $y++) {
-            for ($x = 0; $x < $width; $x++) {
-                if ($matrix->get($x, $y) === 1) {
-                    $x1 = ($x + $border) * $scale;
-                    $y1 = ($y + $border) * $scale;
+        for ($row = 0; $row < $size; $row++) {
+            for ($col = 0; $col < $size; $col++) {
+                if ($matrix->get($col, $row) === 1) {
+                    $x1 = $col * $scale + $padding;
+                    $y1 = $row * $scale + $padding;
                     $x2 = $x1 + $scale - 1;
                     $y2 = $y1 + $scale - 1;
                     imagefilledrectangle($img, $x1, $y1, $x2, $y2, $black);
@@ -265,271 +397,99 @@ class MemberController extends Controller
     }
 
     // ========================
-    // HELPER: Kirim email kartu member dengan CID Inline Attachment
-    // CID Embedding didukung 100% oleh Gmail Web & Gmail Mobile!
-    // ========================
-    private function kirimKartuMember(Member $member): void
-    {
-        $pngBinary = $this->generateQrPngBinary($member->no_member);
-
-        Mail::send([], [], function ($message) use ($member, $pngBinary) {
-            // Embed inline attachment menggunakan Content-ID (CID)
-            $qrCid = $message->embedData($pngBinary, 'qrcode-member.png', 'image/png');
-
-            $html = $this->templateKartu($member, $qrCid);
-
-            $message->to($member->email)
-                    ->subject('Kartu Member E-Parkir Plaza Andalas - ' . $member->no_member)
-                    ->html($html)
-                    ->attachData($pngBinary, "QR-Member-{$member->no_member}.png", [
-                        'mime' => 'image/png',
-                    ]);
-        });
-    }
-
-    // ========================
-    // HELPER: Template HTML kartu member — bentuk landscape kartu metallic grey
+    // HELPER: Template HTML kartu member (dengan QR CID)
     // ========================
     private function templateKartu(Member $member, string $qrCid): string
     {
-        $noMember = htmlspecialchars($member->no_member);
-        $nama     = htmlspecialchars($member->nama);
-        $instansi = htmlspecialchars($member->instansi);
-
-        // Waktu buat (tanggal & jam)
-        $tglBuat = $member->created_at ? $member->created_at->format('d/m/Y') : now()->format('d/m/Y');
-        $jamBuat = $member->created_at ? $member->created_at->format('H:i') : now()->format('H:i');
-        $aktif   = $member->masa_aktif ? $member->masa_aktif->format('d/m/Y') : now()->addDays(30)->format('d/m/Y');
-
-        // Daftar plat motor & mobil
-        $motorList = array_values(array_filter([
-            $member->motor_1 ?: $member->plat_1,
-            $member->motor_2 ?: $member->plat_2,
-            $member->motor_3 ?: $member->plat_3,
-        ]));
-        $mobilList = array_values(array_filter([
-            $member->mobil_1,
-            $member->mobil_2,
-            $member->mobil_3,
-        ]));
-
-        $motorHtml = count($motorList) > 0 ? implode('&nbsp;&nbsp;&bull;&nbsp;&nbsp;', array_map('htmlspecialchars', $motorList)) : '-';
-        $mobilHtml = count($mobilList) > 0 ? implode('&nbsp;&nbsp;&bull;&nbsp;&nbsp;', array_map('htmlspecialchars', $mobilList)) : '-';
+        $masaAktif  = $member->masa_aktif ? $member->masa_aktif->format('d/m/Y') : '—';
+        $motorPlats = array_filter([$member->motor_1, $member->motor_2, $member->motor_3]);
+        $mobilPlats = array_filter([$member->mobil_1, $member->mobil_2, $member->mobil_3]);
+        $motorHtml  = $motorPlats ? implode(', ', $motorPlats) : '—';
+        $mobilHtml  = $mobilPlats ? implode(', ', $mobilPlats) : '—';
 
         return <<<HTML
-        <!DOCTYPE html>
-        <html lang="id">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Kartu Member E-Parkir</title>
-        </head>
-        <body style="margin:0;padding:0;background:#0f172a;font-family:Arial,Helvetica,sans-serif;">
-          <div style="max-width:680px;margin:30px auto;padding:0 16px;">
-
-            <!-- ===== KARTU MEMBER (Design Metallic Graphite Credit Card) ===== -->
-            <table width="100%" cellpadding="0" cellspacing="0"
-                   style="border-radius:24px;overflow:hidden;
-                          background:#262f3a linear-gradient(145deg, #384351 0%, #252d37 55%, #181e26 100%);
-                          color:#ffffff;box-shadow:0 20px 45px rgba(0,0,0,0.6);
-                          border:2px solid #4a5568;border-collapse:separate;">
-              <tr>
-                <td style="padding:28px 24px;border:1px solid rgba(212,175,55,0.35);border-radius:22px;">
-
-                  <!-- TOP ROW: Header Brand + Member Badge -->
-                  <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
-                    <tr>
-                      <td style="vertical-align:top;">
-                        <div style="font-size:10px;font-weight:700;letter-spacing:3px;color:#94a3b8;text-transform:uppercase;margin-bottom:2px;">
-                          E-PARKIR
-                        </div>
-                        <div style="font-size:24px;font-weight:900;letter-spacing:0.5px;color:#ffffff;">
-                          Plaza Andalas
-                        </div>
-                      </td>
-                      <td align="right" style="vertical-align:top;">
-                        <div style="background:linear-gradient(135deg,#f59e0b 0%,#d97706 100%);
-                                    color:#451a03;font-size:11px;font-weight:900;letter-spacing:2px;
-                                    padding:7px 20px;border-radius:8px;box-shadow:0 4px 12px rgba(217,119,6,0.4);
-                                    display:inline-block;text-transform:uppercase;">
-                          MEMBER
-                        </div>
-                      </td>
-                    </tr>
-                  </table>
-
-                  <!-- MAIN CONTENT: 2 Kolom (Kiri Info & Chip, Kanan QR Box) -->
-                  <table width="100%" cellpadding="0" cellspacing="0">
-                    <tr>
-                      <!-- KOLOM KIRI (Info & Nomor) -->
-                      <td style="vertical-align:top;padding-right:20px;">
-
-                        <!-- EMV Chip & Contactless Wave -->
-                        <table cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
-                          <tr>
-                            <td style="vertical-align:middle;">
-                              <!-- Metallic Gold EMV Chip Graphic -->
-                              <div style="width:46px;height:34px;background:linear-gradient(135deg,#eab308 0%,#ca8a04 100%);
-                                          border-radius:6px;border:1px solid #a16207;box-shadow:inset 0 1px 2px rgba(255,255,255,0.4),0 2px 6px rgba(0,0,0,0.4);position:relative;">
-                                <table width="100%" height="34" cellpadding="0" cellspacing="0">
-                                  <tr>
-                                    <td style="border-right:1px solid #854d0e;border-bottom:1px solid #854d0e;width:15px;height:12px;"></td>
-                                    <td style="border-right:1px solid #854d0e;border-bottom:1px solid #854d0e;width:16px;"></td>
-                                    <td style="border-bottom:1px solid #854d0e;"></td>
-                                  </tr>
-                                  <tr>
-                                    <td style="border-right:1px solid #854d0e;border-bottom:1px solid #854d0e;height:10px;"></td>
-                                    <td style="border-right:1px solid #854d0e;border-bottom:1px solid #854d0e;background:rgba(255,255,255,0.25);border-radius:2px;"></td>
-                                    <td style="border-bottom:1px solid #854d0e;"></td>
-                                  </tr>
-                                  <tr>
-                                    <td style="border-right:1px solid #854d0e;height:12px;"></td>
-                                    <td style="border-right:1px solid #854d0e;"></td>
-                                    <td></td>
-                                  </tr>
-                                </table>
-                              </div>
-                            </td>
-                            <td style="vertical-align:middle;padding-left:10px;">
-                              <!-- Contactless Wave Icon -->
-                              <span style="font-size:20px;font-weight:900;color:#94a3b8;letter-spacing:1px;line-height:1;">)))</span>
-                            </td>
-                          </tr>
-                        </table>
-
-                        <!-- Nomor Member (Embossed Gold Monospace) -->
-                        <div style="font-family:'Courier New',Courier,monospace;font-size:21px;font-weight:900;
-                                    letter-spacing:3.5px;color:#fde047;margin-bottom:14px;
-                                    text-shadow:0 1px 2px rgba(0,0,0,0.9), 0 0 12px rgba(253,224,71,0.3);">
-                          {$noMember}
-                        </div>
-
-                        <!-- Nama & Instansi -->
-                        <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
-                          <tr>
-                            <td style="vertical-align:top;padding-right:12px;width:50%;">
-                              <div style="font-size:8.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:2px;">
-                                NAMA PEMILIK
-                              </div>
-                              <div style="font-size:15px;font-weight:800;color:#ffffff;line-height:1.2;">
-                                {$nama}
-                              </div>
-                            </td>
-                            <td style="vertical-align:top;width:50%;">
-                              <div style="font-size:8.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:2px;">
-                                INSTANSI / PERUSAHAAN
-                              </div>
-                              <div style="font-size:14px;font-weight:700;color:#cbd5e1;line-height:1.2;">
-                                {$instansi}
-                              </div>
-                            </td>
-                          </tr>
-                        </table>
-
-                        <!-- Box Plat Nomor Terdaftar (Motor & Mobil) -->
-                        <div style="background:rgba(15,23,42,0.65);border:1px solid rgba(255,255,255,0.12);
-                                    border-radius:10px;padding:9px 14px;margin-bottom:14px;">
-                          <table width="100%" cellpadding="0" cellspacing="0">
-                            <tr>
-                              <td style="vertical-align:top;padding-right:12px;border-right:1px solid rgba(255,255,255,0.1);">
-                                <div style="font-size:8.5px;color:#34d399;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:2px;">
-                                  MOTOR (MAKS. 3):
-                                </div>
-                                <div style="font-family:'Courier New',Courier,monospace;font-size:12px;font-weight:800;color:#ffffff;letter-spacing:1px;">
-                                  {$motorHtml}
-                                </div>
-                              </td>
-                              <td style="vertical-align:top;padding-left:12px;">
-                                <div style="font-size:8.5px;color:#60a5fa;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:2px;">
-                                  MOBIL (MAKS. 3):
-                                </div>
-                                <div style="font-family:'Courier New',Courier,monospace;font-size:12px;font-weight:800;color:#ffffff;letter-spacing:1px;">
-                                  {$mobilHtml}
-                                </div>
-                              </td>
-                            </tr>
-                          </table>
-                        </div>
-
-                        <!-- Waktu Buat & Masa Aktif -->
-                        <table width="100%" cellpadding="0" cellspacing="0">
-                          <tr>
-                            <td style="vertical-align:top;padding-right:14px;">
-                              <div style="font-size:8.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:2px;">
-                                WAKTU BUAT
-                              </div>
-                              <div style="font-size:11px;font-weight:700;color:#ffffff;">
-                                {$tglBuat}
-                              </div>
-                              <div style="font-size:11px;font-weight:600;color:#cbd5e1;">
-                                {$jamBuat}
-                              </div>
-                            </td>
-                            <td style="vertical-align:top;">
-                              <div style="font-size:8.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;font-weight:700;margin-bottom:2px;">
-                                MASA AKTIF (30 HARI)
-                              </div>
-                              <div style="font-size:13px;font-weight:900;color:#fde047;letter-spacing:0.5px;">
-                                {$aktif}
-                              </div>
-                            </td>
-                          </tr>
-                        </table>
-
-                      </td>
-
-                      <!-- KOLOM KANAN (White QR Container) -->
-                      <td align="center" style="vertical-align:middle;width:170px;">
-                        <div style="background:#ffffff;border-radius:16px;padding:12px;display:inline-block;
-                                    box-shadow:0 8px 24px rgba(0,0,0,0.5);text-align:center;">
-                          <img src="{$qrCid}"
-                               width="140" height="140"
-                               alt="QR Member"
-                               style="display:block;border-radius:6px;margin:0 auto;border:0;" />
-                          <div style="margin-top:6px;font-size:9.5px;color:#475569;font-family:'Courier New',monospace;font-weight:700;text-align:center;">
-                            {$noMember}
-                          </div>
-                        </div>
-                        <div style="margin-top:8px;font-size:10px;color:#cbd5e1;font-weight:600;letter-spacing:0.5px;text-align:center;">
-                          Scan di Kiosk Masuk
-                        </div>
-                      </td>
-                    </tr>
-                  </table>
-
-                </td>
-              </tr>
-            </table>
-            <!-- ===== END KARTU ===== -->
-
-            <!-- Panduan Penggunaan -->
-            <table width="100%" cellpadding="0" cellspacing="0"
-                   style="margin-top:20px;background:#1e293b;border-radius:14px;
-                          border:1px solid #334155;box-shadow:0 4px 14px rgba(0,0,0,0.25);">
-              <tr>
-                <td style="padding:20px 24px;">
-                  <div style="font-size:14px;font-weight:700;color:#f8fafc;margin-bottom:10px;">
-                    Ketentuan & Cara Menggunakan Kartu Member
-                  </div>
-                  <ol style="margin:0;padding-left:18px;color:#cbd5e1;font-size:12px;line-height:1.8;">
-                    <li>Kartu member hanya dapat digunakan untuk <strong>plat nomor yang telah didaftarkan</strong> (Motor: {$motorHtml} | Mobil: {$mobilHtml}).</li>
-                    <li>Pada kiosk parkir, pilih jenis kendaraan dan scan QR code pada kartu ini untuk mencetak tiket parkir.</li>
-                    <li>Masa aktif kartu berlaku selama <strong>30 hari</strong> sejak tanggal pembuatan/perpanjangan.</li>
-                    <li>Jika masa aktif telah habis, status kartu menjadi <strong>Expired</strong> dan dapat diperpanjang di loket petugas.</li>
-                    <li>Sebagai member aktif, Anda berhak parkir <strong>GRATIS</strong> di Plaza Andalas!</li>
-                  </ol>
-                </td>
-              </tr>
-            </table>
-
-            <!-- Footer -->
-            <p style="text-align:center;font-size:11px;color:#64748b;margin-top:16px;">
-              Email ini dikirim otomatis oleh Sistem E-Parkir Plaza Andalas.<br>
-              QR Code kartu member juga telah dilampirkan sebagai file gambar pada email ini.
-            </p>
+        <!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"></head>
+        <body style="margin:0;padding:0;background:#0f172a;font-family:'Segoe UI',Arial,sans-serif;">
+          <div style="max-width:520px;margin:32px auto;background:#1e293b;border-radius:20px;border:1px solid #334155;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#1d4ed8 0%,#1e40af 100%);padding:28px 32px;text-align:center;">
+              <div style="color:#fff;font-size:22px;font-weight:800;">E-PARKIR Plaza Andalas</div>
+              <div style="color:#bfdbfe;font-size:13px;margin-top:4px;">Kartu Member Aktif</div>
+            </div>
+            <div style="padding:28px 32px;">
+              <p style="color:#e2e8f0;font-size:15px;margin:0 0 20px;">Halo <strong style="color:#f8fafc;">{$member->nama}</strong>,</p>
+              <p style="color:#cbd5e1;font-size:14px;margin:0 0 20px;">Kartu member Anda telah berhasil dibuat/diperpanjang. Gunakan QR Code di bawah untuk parkir gratis.</p>
+              <div style="text-align:center;background:#fff;border-radius:16px;padding:20px;margin-bottom:20px;">
+                <img src="cid:{$qrCid}" alt="QR Member" style="width:160px;height:160px;display:block;margin:0 auto;">
+                <div style="font-family:monospace;font-size:16px;font-weight:800;color:#1e293b;margin-top:12px;">{$member->no_member}</div>
+              </div>
+              <table style="width:100%;font-size:13px;color:#cbd5e1;border-collapse:collapse;margin-bottom:16px;">
+                <tr><td style="padding:4px 0;color:#94a3b8;">Nama</td><td style="text-align:right;font-weight:600;color:#f8fafc;">{$member->nama}</td></tr>
+                <tr><td style="padding:4px 0;color:#94a3b8;">Instansi</td><td style="text-align:right;color:#f8fafc;">{$member->instansi}</td></tr>
+                <tr><td style="padding:4px 0;color:#94a3b8;">Masa Aktif</td><td style="text-align:right;font-weight:700;color:#34d399;">{$masaAktif}</td></tr>
+                <tr><td style="padding:4px 0;color:#94a3b8;">Motor</td><td style="text-align:right;font-family:monospace;color:#38bdf8;">{$motorHtml}</td></tr>
+                <tr><td style="padding:4px 0;color:#94a3b8;">Mobil</td><td style="text-align:right;font-family:monospace;color:#38bdf8;">{$mobilHtml}</td></tr>
+              </table>
+              <p style="color:#94a3b8;font-size:11px;margin:0;">Email ini dikirim otomatis oleh Sistem E-Parkir Plaza Andalas.</p>
+            </div>
           </div>
-        </body>
-        </html>
+        </body></html>
         HTML;
     }
+
+    // ========================
+    // HELPER: Template email reminder perpanjang kartu expired
+    // ========================
+    private function kirimEmailReminder(Member $member): void
+    {
+        $masaAktif   = $member->masa_aktif ? $member->masa_aktif->format('d/m/Y') : '—';
+        $hariExpired = $member->masa_aktif
+            ? (int) now()->diffInDays($member->masa_aktif, false)
+            : 0;
+        $labelHari   = $hariExpired < 0
+            ? abs($hariExpired) . ' hari yang lalu'
+            : 'hari ini';
+
+        $html = <<<HTML
+        <!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"></head>
+        <body style="margin:0;padding:0;background:#0f172a;font-family:'Segoe UI',Arial,sans-serif;">
+          <div style="max-width:520px;margin:32px auto;background:#1e293b;border-radius:20px;border:1px solid #334155;overflow:hidden;">
+            <div style="background:linear-gradient(135deg,#dc2626 0%,#b91c1c 100%);padding:28px 32px;text-align:center;">
+              <div style="color:#fff;font-size:20px;font-weight:800;">Kartu Member Anda Telah Expired</div>
+              <div style="color:#fca5a5;font-size:13px;margin-top:4px;">E-Parkir Plaza Andalas</div>
+            </div>
+            <div style="padding:28px 32px;">
+              <p style="color:#e2e8f0;font-size:15px;margin:0 0 20px;">Halo <strong style="color:#f8fafc;">{$member->nama}</strong>,</p>
+              <p style="color:#cbd5e1;font-size:14px;line-height:1.7;margin:0 0 20px;">
+                Kartu member Anda <strong style="color:#38bdf8;font-family:monospace;">{$member->no_member}</strong>
+                telah <strong style="color:#f87171;">EXPIRED</strong> sejak <strong style="color:#f8fafc;">{$masaAktif}</strong> ({$labelHari}).
+              </p>
+              <div style="background:#0f172a;border:1px solid #ef4444;border-left:4px solid #ef4444;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+                <div style="color:#f87171;font-weight:700;font-size:13px;margin-bottom:8px;">Detail Kartu</div>
+                <table style="width:100%;font-size:13px;color:#cbd5e1;border-collapse:collapse;">
+                  <tr><td style="padding:3px 0;color:#94a3b8;">No. Member</td><td style="text-align:right;font-weight:700;color:#38bdf8;font-family:monospace;">{$member->no_member}</td></tr>
+                  <tr><td style="padding:3px 0;color:#94a3b8;">Nama</td><td style="text-align:right;color:#f8fafc;">{$member->nama}</td></tr>
+                  <tr><td style="padding:3px 0;color:#94a3b8;">Masa Aktif Lama</td><td style="text-align:right;font-weight:700;color:#f87171;">{$masaAktif}</td></tr>
+                </table>
+              </div>
+              <div style="background:#1e3a5f;border:1px solid #1d4ed8;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+                <div style="color:#60a5fa;font-weight:700;font-size:13px;margin-bottom:8px;">Cara Memperpanjang</div>
+                <ol style="margin:0;padding-left:18px;color:#bfdbfe;font-size:13px;line-height:1.9;">
+                  <li>Kunjungi loket petugas E-Parkir Plaza Andalas</li>
+                  <li>Tunjukkan nomor member: <strong style="font-family:monospace;color:#38bdf8;">{$member->no_member}</strong></li>
+                  <li>Bayar perpanjangan <strong>Rp 150.000</strong> (30 hari)</li>
+                </ol>
+              </div>
+              <p style="color:#94a3b8;font-size:11px;margin:0;">Email ini dikirim otomatis oleh Sistem E-Parkir Plaza Andalas.</p>
+            </div>
+          </div>
+        </body></html>
+        HTML;
+
+        Mail::send([], [], function ($message) use ($member, $html) {
+            $message->to($member->email)
+                    ->subject("PENTING: Kartu Member E-Parkir Anda Expired — {$member->no_member}")
+                    ->html($html);
+        });
+    }
+
 }

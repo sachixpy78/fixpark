@@ -38,9 +38,7 @@ class TiketController extends Controller
         $request->validate([
             'no_member'       => 'required|string',
             'jenis_kendaraan' => 'required|in:motor,mobil',
-            'plat_nomor'      => 'required|string',
-        ], [
-            'plat_nomor.required' => 'Silakan pilih salah satu plat nomor kendaraan yang terdaftar.',
+            // plat_nomor diinput nanti saat scan keluar oleh petugas
         ]);
 
         $member = Member::where('no_member', trim($request->no_member))
@@ -55,26 +53,8 @@ class TiketController extends Controller
             return response()->json(['message' => 'Kartu member telah EXPIRED (masa aktif 30 hari telah berakhir). Silakan lakukan perpanjangan di loket petugas.'], 422);
         }
 
-        // Validasi plat nomor harus salah satu dari plat yang didaftarkan
-        $allowedPlats = $member->daftar_plat;
-        $cleanInput   = strtoupper(str_replace(' ', '', $request->plat_nomor));
-        $matchedPlat  = null;
-
-        foreach ($allowedPlats as $p) {
-            if (strtoupper(str_replace(' ', '', $p)) === $cleanInput) {
-                $matchedPlat = $p;
-                break;
-            }
-        }
-
-        if (!$matchedPlat) {
-            $strAllowed = implode(', ', $allowedPlats);
-            return response()->json([
-                'message' => "Plat nomor '{$request->plat_nomor}' tidak terdaftar pada kartu member ini. Pilihan plat Anda: [ {$strAllowed} ]"
-            ], 422);
-        }
-
-        $tiket = $this->buatTiket('member', $request->jenis_kendaraan, $member->id, $matchedPlat);
+        // Tiket dibuat tanpa plat — plat diisi petugas saat scan keluar
+        $tiket = $this->buatTiket('member', $request->jenis_kendaraan, $member->id, null);
 
         return response()->json([
             'message' => 'Tiket member berhasil dibuat',

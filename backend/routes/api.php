@@ -64,11 +64,15 @@ Route::get('/parkir/struk/{tiketId}', [ParkirController::class, 'struk']);
 // =========================
 Route::get('/member', [MemberController::class, 'index']);
 Route::post('/member', [MemberController::class, 'store']);
+// Route statis sebelum {id} agar tidak bentrok dengan wildcard
+Route::post('/member/kirim-reminder-semua', [MemberController::class, 'kirimReminderSemua']);
 Route::get('/member/{id}', [MemberController::class, 'show']);
 Route::put('/member/{id}', [MemberController::class, 'update']);
 Route::delete('/member/{id}', [MemberController::class, 'destroy']);
 Route::post('/member/{id}/kirim-ulang', [MemberController::class, 'kirimUlang']);
 Route::post('/member/{id}/perpanjang', [MemberController::class, 'perpanjang']);
+Route::post('/member/{id}/kirim-reminder', [MemberController::class, 'kirimReminder']);
+Route::get('/member-renewals', [MemberController::class, 'renewalIndex']);
 
 // =========================
 // TRANSAKSI & LAPORAN

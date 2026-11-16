@@ -10,8 +10,11 @@ const nama = ref('')
 const today = new Date().toISOString().split('T')[0]
 const filter = reactive({ tanggal_dari: today, tanggal_sampai: today })
 const transaksi = ref([])
+const renewals = ref([])
 const loading = ref(false)
+const loadingRenewals = ref(false)
 const hoveredIndex = ref(null)
+const activeTab = ref('tiket')
 
 const getToken = () => (import.meta.client ? localStorage.getItem('auth_token') || '' : '')
 
@@ -37,9 +40,37 @@ const fetchData = async () => {
   }
 }
 
+const fetchRenewals = async () => {
+  if (!import.meta.client) return
+  loadingRenewals.value = true
+  try {
+    const params = new URLSearchParams()
+    if (filter.tanggal_dari) params.append('tanggal_dari', filter.tanggal_dari)
+    if (filter.tanggal_sampai) params.append('tanggal_sampai', filter.tanggal_sampai)
+
+    renewals.value = await $fetch(`/member-renewals?${params}`, {
+      baseURL: config.public.apiBase,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${getToken()}`,
+      },
+    })
+  } catch (err) {
+    console.error('Gagal mengambil data perpanjang member:', err)
+    renewals.value = []
+  } finally {
+    loadingRenewals.value = false
+  }
+}
+
+const fetchAll = () => {
+  fetchData()
+  fetchRenewals()
+}
+
 onMounted(() => {
   nama.value = localStorage.getItem('user_name') || ''
-  fetchData()
+  fetchAll()
 })
 
 const stats = computed(() => ({
@@ -48,6 +79,11 @@ const stats = computed(() => ({
   motor: transaksi.value.filter(t => t.jenis_kendaraan === 'motor').length,
   mobil: transaksi.value.filter(t => t.jenis_kendaraan === 'mobil').length,
   member: transaksi.value.filter(t => t.jenis_member === 'member').length,
+}))
+
+const renewalStats = computed(() => ({
+  total: renewals.value.length,
+  nominal: renewals.value.reduce((s, r) => s + (Number(r.nominal_bayar) || 0), 0),
 }))
 
 // DATA UNTUK DIAGRAM GARIS (LINE CHART)
@@ -126,6 +162,7 @@ const logout = async () => {
 
 const formatRp = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID')
 const formatTgl = (d) => d ? new Date(d).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'
+const formatTglShort = (d) => d ? new Date(d).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
 const formatMenit = (m) => {
   if (!m && m !== 0) return '—'
   const h = Math.floor(m / 60)
@@ -194,8 +231,8 @@ const formatMenit = (m) => {
               </div>
             </div>
             <div class="md:col-span-2">
-              <button @click="fetchData" :disabled="loading" class="h-[46px] w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-5 rounded-xl text-sm transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">
-                <svg v-if="loading" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+              <button @click="fetchAll" :disabled="loading || loadingRenewals" class="h-[46px] w-full bg-blue-500 hover:bg-blue-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold px-5 rounded-xl text-sm transition-all shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2">
+                <svg v-if="loading || loadingRenewals" class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
@@ -359,24 +396,36 @@ const formatMenit = (m) => {
           </div>
         </div>
 
-        <!-- Tabel Transaksi -->
-        <div class="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 overflow-hidden">
+        <!-- Dropdown Tab Switcher -->
+        <div class="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 p-4 mb-4 flex items-center gap-4">
+          <svg class="w-5 h-5 text-blue-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+          <div class="relative flex-shrink-0">
+            <select v-model="activeTab" class="appearance-none bg-slate-800 border border-slate-600 text-white font-semibold text-sm pl-4 pr-10 py-2.5 rounded-xl outline-none focus:border-blue-400 transition-all cursor-pointer">
+              <option value="tiket">Riwayat Tiket</option>
+              <option value="perpanjang">Riwayat Perpanjang Member</option>
+            </select>
+            <svg class="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </div>
+          <span v-if="activeTab === 'tiket'" class="text-sm text-slate-400">{{ transaksi.length }} transaksi pada periode ini</span>
+          <span v-else class="text-sm text-slate-400">{{ renewals.length }} perpanjangan pada periode ini</span>
+        </div>
+
+        <!-- TABEL RIWAYAT TIKET -->
+        <div v-if="activeTab === 'tiket'" class="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 overflow-hidden">
           <div class="px-6 py-5 border-b border-slate-700/50 flex items-center justify-between">
             <div class="flex items-center gap-3">
               <div class="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/30 flex items-center justify-center">
                 <svg class="w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
               </div>
               <div>
-                <h3 class="text-lg font-bold text-white">Detail Transaksi</h3>
+                <h3 class="text-lg font-bold text-white">Riwayat Tiket Parkir</h3>
                 <p class="text-xs text-slate-400">Menampilkan {{ transaksi.length }} data transaksi</p>
               </div>
             </div>
-            <div class="flex items-center gap-2">
-              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 border border-blue-400/30 text-blue-300 text-xs font-semibold">
-                <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z"/></svg>
-                {{ transaksi.length }} Records
-              </span>
-            </div>
+            <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 border border-blue-400/30 text-blue-300 text-xs font-semibold">
+              <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z"/></svg>
+              {{ transaksi.length }} Records
+            </span>
           </div>
 
           <div class="overflow-x-auto">
@@ -483,6 +532,78 @@ const formatMenit = (m) => {
           </div>
         </div>
 
+
+        <!-- TABEL RIWAYAT PERPANJANG MEMBER -->
+        <div v-else-if="activeTab === 'perpanjang'" class="bg-slate-900/60 backdrop-blur-xl rounded-2xl border border-slate-700/50 overflow-hidden">
+          <div class="px-6 py-5 border-b border-slate-700/50 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center">
+                <svg class="w-5 h-5 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              </div>
+              <div>
+                <h3 class="text-lg font-bold text-white">Riwayat Perpanjang Member</h3>
+                <p class="text-xs text-slate-400">Menampilkan {{ renewals.length }} data perpanjangan</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-semibold">Total: {{ formatRp(renewalStats.nominal) }}</span>
+              <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-semibold">{{ renewals.length }} Records</span>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="bg-slate-950/40">
+                <tr>
+                  <th class="text-left px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">#</th>
+                  <th class="text-left px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">No. Member</th>
+                  <th class="text-left px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Nama Member</th>
+                  <th class="text-left px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Instansi</th>
+                  <th class="text-left px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Masa Aktif Lama</th>
+                  <th class="text-left px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Masa Aktif Baru</th>
+                  <th class="text-left px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Tanggal Perpanjang</th>
+                  <th class="text-right px-4 py-3 text-[10px] text-slate-400 font-bold uppercase tracking-wider">Nominal</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/50">
+                <tr v-if="loadingRenewals">
+                  <td colspan="8" class="px-6 py-20 text-center">
+                    <div class="flex flex-col items-center gap-4">
+                      <svg class="w-10 h-10 text-slate-500 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                      <p class="text-base font-bold text-white">Memuat data perpanjang...</p>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-else-if="renewals.length === 0">
+                  <td colspan="8" class="px-6 py-20 text-center">
+                    <div class="flex flex-col items-center gap-4">
+                      <svg class="w-10 h-10 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                      <div>
+                        <p class="text-base font-bold text-white">Belum ada riwayat perpanjang</p>
+                        <p class="text-xs text-slate-500 mt-1">Tidak ada perpanjangan pada periode ini.</p>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+                <tr v-for="(r, i) in renewals" :key="r.id" class="hover:bg-slate-800/30 transition-colors">
+                  <td class="px-4 py-3 text-slate-400 text-xs">{{ i + 1 }}</td>
+                  <td class="px-4 py-3"><span class="font-mono text-xs font-bold text-emerald-300">{{ r.no_member }}</span></td>
+                  <td class="px-4 py-3"><span class="font-semibold text-white text-sm">{{ r.nama_member }}</span></td>
+                  <td class="px-4 py-3 text-slate-300 text-xs">{{ r.instansi || '&#8212;' }}</td>
+                  <td class="px-4 py-3"><span class="inline-flex items-center px-2 py-1 rounded-md bg-red-500/10 border border-red-500/30 text-red-300 text-[10px] font-semibold">{{ r.masa_aktif_lama ? new Date(r.masa_aktif_lama).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '&#8212;' }}</span></td>
+                  <td class="px-4 py-3"><span class="inline-flex items-center px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[10px] font-semibold">{{ r.masa_aktif_baru ? new Date(r.masa_aktif_baru).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) : '&#8212;' }}</span></td>
+                  <td class="px-4 py-3 text-slate-300 text-[11px]">{{ formatTgl(r.created_at) }}</td>
+                  <td class="px-4 py-3 text-right"><span class="font-bold text-emerald-300 text-xs whitespace-nowrap">{{ formatRp(r.nominal_bayar) }}</span></td>
+                </tr>
+              </tbody>
+              <tfoot v-if="renewals.length > 0" class="bg-slate-950/40 font-bold border-t border-slate-700/50">
+                <tr>
+                  <td colspan="7" class="py-3.5 px-4 text-right text-emerald-300 font-black">TOTAL NOMINAL PERPANJANG</td>
+                  <td class="py-3.5 px-4 text-right text-emerald-300 text-base font-black">{{ formatRp(renewalStats.nominal) }}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 </template>
